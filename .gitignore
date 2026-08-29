@@ -1,0 +1,21 @@
+# python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# data
+data/raw/*
+data/processed/*
+data/client_splits/*
+!data/raw/.gitkeep
+!data/processed/.gitkeep
+!data/client_splits/.gitkeep
+
+# experiment outputs
+experiments/results/*.csv
+experiments/results/plots/*.png
+
+# os / editor
+.DS_Store
+.vscode/
