@@ -53,6 +53,9 @@ class FraudClient(fl.client.NumPyClient):
 
     def fit(self, parameters, config):
         self.set_parameters(parameters)
+        global_params = [p.clone().detach() for p in self.model.parameters()]
+        proximal_mu = config.get("proximal_mu", 0.0)
+
         optimizer = torch.optim.Adam(self.model.parameters(), lr=LR)
 
         ds = TensorDataset(self.X, self.y)
@@ -63,6 +66,13 @@ class FraudClient(fl.client.NumPyClient):
             for X_batch, y_batch in loader:
                 optimizer.zero_grad()
                 loss = self.criterion(self.model(X_batch), y_batch)
+
+                if proximal_mu > 0:
+                    proximal_term = 0.0
+                    for local_p, global_p in zip(self.model.parameters(), global_params):
+                        proximal_term += (local_p - global_p).norm(2) ** 2
+                    loss += (proximal_mu / 2) * proximal_term
+
                 loss.backward()
                 optimizer.step()
 
