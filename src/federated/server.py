@@ -1,3 +1,4 @@
+import os
 """
 server.py
 
@@ -8,7 +9,7 @@ with weighted aggregation of precision/recall/F1 across clients.
 import flwr as fl
 
 NUM_CLIENTS = 5
-NUM_ROUNDS = 15
+NUM_ROUNDS = int(os.environ.get("NUM_ROUNDS", 15))
 
 
 def weighted_average(metrics):
@@ -19,6 +20,13 @@ def weighted_average(metrics):
     return {"precision": precision, "recall": recall, "f1": f1}
 
 
+def fit_metrics_aggregation(metrics):
+    epsilons = [m["epsilon"] for _, m in metrics if "epsilon" in m]
+    if not epsilons:
+        return {}
+    return {"avg_epsilon": sum(epsilons) / len(epsilons), "max_epsilon": max(epsilons)}
+
+
 def get_fedavg_strategy():
     return fl.server.strategy.FedAvg(
         fraction_fit=1.0,
@@ -27,4 +35,5 @@ def get_fedavg_strategy():
         min_evaluate_clients=NUM_CLIENTS,
         min_available_clients=NUM_CLIENTS,
         evaluate_metrics_aggregation_fn=weighted_average,
+        fit_metrics_aggregation_fn=fit_metrics_aggregation,
     )

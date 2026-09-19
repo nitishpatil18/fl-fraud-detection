@@ -9,6 +9,7 @@ exposes raw data, only sends model weights to the server.
 import sys
 import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "model"))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import flwr as fl
 import torch
@@ -17,10 +18,12 @@ import pandas as pd
 from torch.utils.data import DataLoader, TensorDataset
 
 from net import FraudNet
+from privacy.dp_wrapper import make_private, get_epsilon
 
-BATCH_SIZE = 256
-LOCAL_EPOCHS = 2
+BATCH_SIZE = int(os.environ.get("BATCH_SIZE", 256))
+LOCAL_EPOCHS = int(os.environ.get("LOCAL_EPOCHS", 2))
 LR = 0.001
+DP_NOISE_MULTIPLIER = float(os.environ.get("DP_NOISE_MULTIPLIER", 0.0))
 
 
 def load_client_data(client_id: int):
@@ -61,6 +64,12 @@ class FraudClient(fl.client.NumPyClient):
         ds = TensorDataset(self.X, self.y)
         loader = DataLoader(ds, batch_size=BATCH_SIZE, shuffle=True)
 
+        epsilon = None
+        if DP_NOISE_MULTIPLIER > 0:
+            self.model, optimizer, loader, privacy_engine = make_private(
+                self.model, optimizer, loader, DP_NOISE_MULTIPLIER
+            )
+
         self.model.train()
         for _ in range(LOCAL_EPOCHS):
             for X_batch, y_batch in loader:
@@ -76,8 +85,14 @@ class FraudClient(fl.client.NumPyClient):
                 loss.backward()
                 optimizer.step()
 
-        print(f"[client {self.client_id}] finished local training on {len(self.X)} samples")
-        return self.get_parameters(config={}), len(self.X), {}
+        if DP_NOISE_MULTIPLIER > 0:
+            epsilon = get_epsilon(privacy_engine)
+            print(f"[client {self.client_id}] finished DP training, epsilon={epsilon:.3f}")
+        else:
+            print(f"[client {self.client_id}] finished local training on {len(self.X)} samples")
+
+        metrics = {"epsilon": epsilon} if epsilon is not None else {}
+        return self.get_parameters(config={}), len(self.X), metrics
 
     def evaluate(self, parameters, config):
         self.set_parameters(parameters)
