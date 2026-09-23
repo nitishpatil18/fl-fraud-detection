@@ -43,7 +43,7 @@ def make_private(model, optimizer, data_loader, noise_multiplier: float):
     returns the wrapped (private_model, private_optimizer, private_loader, privacy_engine)
     so epsilon can be queried later via privacy_engine.get_epsilon(delta=DELTA)
     """
-    privacy_engine = PrivacyEngine()
+    privacy_engine = PrivacyEngine(accountant="rdp")
 
     private_model, private_optimizer, private_loader = privacy_engine.make_private(
         module=model,
@@ -58,3 +58,15 @@ def make_private(model, optimizer, data_loader, noise_multiplier: float):
 
 def get_epsilon(privacy_engine, delta: float = DELTA) -> float:
     return privacy_engine.get_epsilon(delta=delta)
+
+
+def scaled_noise_multiplier(base_noise: float, client_size: int, reference_size: int = 20000) -> float:
+    """
+    scales noise inversely with sqrt(dataset size), so small clients
+    (like a 628-row client) get calibrated noise relative to a large
+    client (e.g. 159,296 rows), rather than identical fixed noise for both.
+    reference_size is the dataset size at which base_noise applies unscaled.
+    """
+    import math
+    scale_factor = math.sqrt(reference_size / client_size)
+    return base_noise * scale_factor

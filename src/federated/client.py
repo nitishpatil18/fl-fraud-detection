@@ -18,7 +18,7 @@ import pandas as pd
 from torch.utils.data import DataLoader, TensorDataset
 
 from net import FraudNet
-from privacy.dp_wrapper import make_private, get_epsilon, save_accountant_history, load_accountant_history
+from privacy.dp_wrapper import make_private, get_epsilon, save_accountant_history, load_accountant_history, scaled_noise_multiplier
 
 BATCH_SIZE = int(os.environ.get("BATCH_SIZE", 256))
 LOCAL_EPOCHS = int(os.environ.get("LOCAL_EPOCHS", 2))
@@ -66,8 +66,9 @@ class FraudClient(fl.client.NumPyClient):
 
         epsilon = None
         if DP_NOISE_MULTIPLIER > 0:
+            client_noise = scaled_noise_multiplier(DP_NOISE_MULTIPLIER, len(self.X))
             self.model, optimizer, loader, privacy_engine = make_private(
-                self.model, optimizer, loader, DP_NOISE_MULTIPLIER
+                self.model, optimizer, loader, client_noise
             )
             privacy_engine.accountant.history = load_accountant_history(self.client_id)
 
@@ -89,7 +90,7 @@ class FraudClient(fl.client.NumPyClient):
         if DP_NOISE_MULTIPLIER > 0:
             save_accountant_history(self.client_id, privacy_engine)
             epsilon = get_epsilon(privacy_engine)
-            print(f"[client {self.client_id}] finished DP training, cumulative epsilon={epsilon:.3f}")
+            print(f"[client {self.client_id}] finished DP training (noise={client_noise:.3f}), cumulative epsilon={epsilon:.3f}")
         else:
             print(f"[client {self.client_id}] finished local training on {len(self.X)} samples")
 
