@@ -66,7 +66,7 @@ class FraudClient(fl.client.NumPyClient):
 
         epsilon = None
         if DP_NOISE_MULTIPLIER > 0:
-            client_noise = scaled_noise_multiplier(DP_NOISE_MULTIPLIER, len(self.X))
+            client_noise = scaled_noise_multiplier(DP_NOISE_MULTIPLIER, len(self.X), BATCH_SIZE, LOCAL_EPOCHS)
             self.model, optimizer, loader, privacy_engine = make_private(
                 self.model, optimizer, loader, client_noise
             )

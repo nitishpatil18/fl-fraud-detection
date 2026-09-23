@@ -60,13 +60,26 @@ def get_epsilon(privacy_engine, delta: float = DELTA) -> float:
     return privacy_engine.get_epsilon(delta=delta)
 
 
-def scaled_noise_multiplier(base_noise: float, client_size: int, reference_size: int = 20000) -> float:
+def scaled_noise_multiplier(
+    base_noise: float,
+    client_size: int,
+    batch_size: int,
+    local_epochs: int,
+    reference_size: int = 20000,
+    reference_steps: int = 200,
+) -> float:
     """
-    scales noise inversely with sqrt(dataset size), so small clients
-    (like a 628-row client) get calibrated noise relative to a large
-    client (e.g. 159,296 rows), rather than identical fixed noise for both.
-    reference_size is the dataset size at which base_noise applies unscaled.
+    scales noise by BOTH dataset size and number of training steps,
+    since RDP composition grows with step count regardless of noise
+    level. a client with few rows but many steps (small dataset,
+    small batch size) still needs higher noise than size alone would
+    suggest, and a client with many steps (large dataset) needs
+    proportionally more noise per step to keep total composition bounded.
     """
     import math
-    scale_factor = math.sqrt(reference_size / client_size)
-    return base_noise * scale_factor
+    steps_per_round = max(1, (client_size // batch_size) * local_epochs)
+
+    size_factor = math.sqrt(reference_size / client_size)
+    step_factor = math.sqrt(steps_per_round / reference_steps)
+
+    return base_noise * size_factor * step_factor
