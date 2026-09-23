@@ -27,8 +27,28 @@ def fit_metrics_aggregation(metrics):
     return {"avg_epsilon": sum(epsilons) / len(epsilons), "max_epsilon": max(epsilons)}
 
 
-def get_fedavg_strategy():
-    return fl.server.strategy.FedAvg(
+class SaveModelFedAvg(fl.server.strategy.FedAvg):
+    """FedAvg strategy that saves the aggregated global model after
+    the final round, so it can be attacked/evaluated later."""
+
+    def __init__(self, save_path: str, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.save_path = save_path
+        self.latest_parameters = None
+
+    def aggregate_fit(self, server_round, results, failures):
+        aggregated_parameters, metrics = super().aggregate_fit(server_round, results, failures)
+        if aggregated_parameters is not None:
+            self.latest_parameters = aggregated_parameters
+            ndarrays = fl.common.parameters_to_ndarrays(aggregated_parameters)
+            import numpy as np
+            np.savez(self.save_path, *ndarrays)
+        return aggregated_parameters, metrics
+
+
+def get_fedavg_strategy(save_path: str = "experiments/results/fedavg_global_model.npz"):
+    return SaveModelFedAvg(
+        save_path=save_path,
         fraction_fit=1.0,
         fraction_evaluate=1.0,
         min_fit_clients=NUM_CLIENTS,
