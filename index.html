@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Fraud Detection Model Tester</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --card: #1a1d29;
+    --border: #2a2e3d;
+    --text: #e6e8ef;
+    --muted: #8b8fa3;
+    --accent: #5b8cff;
+    --danger: #ff5b6a;
+    --safe: #3ecf8e;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    display: flex;
+    justify-content: center;
+    padding: 40px 20px;
+  }
+  .container { max-width: 720px; width: 100%; }
+  h1 { font-size: 22px; margin-bottom: 4px; }
+  p.subtitle { color: var(--muted); margin-top: 0; margin-bottom: 28px; font-size: 14px; }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px;
+    margin-bottom: 20px;
+  }
+  .buttons { display: flex; gap: 12px; margin-bottom: 8px; }
+  button {
+    flex: 1;
+    padding: 12px 16px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: #232739;
+    color: var(--text);
+    font-size: 14px;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  button:hover { background: #2b3049; }
+  button:disabled { opacity: 0.5; cursor: default; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: white; }
+  button.primary:hover { background: #4a7aef; }
+  .status { font-size: 13px; color: var(--muted); margin-top: 10px; min-height: 18px; }
+  .result {
+    margin-top: 20px;
+    padding: 20px;
+    border-radius: 10px;
+    display: none;
+  }
+  .result.show { display: block; }
+  .result.fraud { background: rgba(255, 91, 106, 0.1); border: 1px solid var(--danger); }
+  .result.safe { background: rgba(62, 207, 142, 0.1); border: 1px solid var(--safe); }
+  .result-row { display: flex; justify-content: space-between; padding: 6px 0; font-size: 14px; }
+  .result-row .label { color: var(--muted); }
+  .result-verdict { font-size: 18px; font-weight: 600; margin-bottom: 10px; }
+  .result.fraud .result-verdict { color: var(--danger); }
+  .result.safe .result-verdict { color: var(--safe); }
+  .prob-bar-track { height: 8px; background: var(--border); border-radius: 4px; overflow: hidden; margin: 10px 0 16px; }
+  .prob-bar-fill { height: 100%; border-radius: 4px; transition: width 0.4s ease; }
+  .result.fraud .prob-bar-fill { background: var(--danger); }
+  .result.safe .prob-bar-fill { background: var(--safe); }
+  .features {
+    margin-top: 16px;
+    font-size: 11px;
+    color: var(--muted);
+    max-height: 100px;
+    overflow-y: auto;
+    background: #14161f;
+    border-radius: 6px;
+    padding: 10px;
+    word-break: break-all;
+    display: none;
+  }
+  .toggle-features {
+    font-size: 12px;
+    color: var(--accent);
+    cursor: pointer;
+    margin-top: 10px;
+    display: inline-block;
+  }
+  .backend-note {
+    font-size: 12px;
+    color: var(--muted);
+    margin-top: 24px;
+    text-align: center;
+  }
+  code { background: #14161f; padding: 2px 6px; border-radius: 4px; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>Fraud Detection Model Tester</h1>
+  <p class="subtitle">Pulls a real transaction from the held-out test set and runs it through the trained FedAvg model.</p>
+
+  <div class="card">
+    <div class="buttons">
+      <button id="btnNormal">Test on a normal transaction</button>
+      <button id="btnFraud">Test on a fraud transaction</button>
+    </div>
+    <button class="primary" id="btnPredict" disabled style="width:100%; margin-top:12px;">Run prediction</button>
+    <div class="status" id="status"></div>
+
+    <div class="result" id="result">
+      <div class="result-verdict" id="verdict"></div>
+      <div class="prob-bar-track"><div class="prob-bar-fill" id="probBar" style="width:0%"></div></div>
+      <div class="result-row"><span class="label">Fraud probability</span><span id="probValue">-</span></div>
+      <div class="result-row"><span class="label">Model prediction</span><span id="predLabel">-</span></div>
+      <div class="result-row"><span class="label">Actual label (ground truth)</span><span id="trueLabel">-</span></div>
+      <div class="result-row"><span class="label">Correct?</span><span id="correctness">-</span></div>
+      <span class="toggle-features" id="toggleFeatures">show raw feature values</span>
+      <div class="features" id="featuresBox"></div>
+    </div>
+  </div>
+
+  <p class="backend-note">Backend must be running at <code>http://127.0.0.1:8000</code> (uvicorn src.api.serve:app --reload --port 8000)</p>
+</div>
+
+<script>
+const API_BASE = "http://127.0.0.1:8000";
+let currentSample = null;
+
+const statusEl = document.getElementById("status");
+const btnPredict = document.getElementById("btnPredict");
+const resultEl = document.getElementById("result");
+const verdictEl = document.getElementById("verdict");
+const probBar = document.getElementById("probBar");
+const probValue = document.getElementById("probValue");
+const predLabel = document.getElementById("predLabel");
+const trueLabel = document.getElementById("trueLabel");
+const correctness = document.getElementById("correctness");
+const featuresBox = document.getElementById("featuresBox");
+const toggleFeatures = document.getElementById("toggleFeatures");
+
+toggleFeatures.addEventListener("click", () => {
+  const visible = featuresBox.style.display === "block";
+  featuresBox.style.display = visible ? "none" : "block";
+  toggleFeatures.textContent = visible ? "show raw feature values" : "hide raw feature values";
+});
+
+async function fetchSample(label) {
+  resultEl.classList.remove("show");
+  btnPredict.disabled = true;
+  statusEl.textContent = "Fetching a real " + (label === 1 ? "fraud" : "normal") + " transaction from the test set...";
+  try {
+    const res = await fetch(`${API_BASE}/sample?label=${label}`);
+    if (!res.ok) throw new Error("backend returned " + res.status);
+    const data = await res.json();
+    currentSample = data;
+    statusEl.textContent = "Loaded a transaction (true label: " + (data.true_label === 1 ? "fraud" : "normal") + "). Click Run prediction.";
+    btnPredict.disabled = false;
+  } catch (err) {
+    statusEl.textContent = "Could not reach the backend at " + API_BASE + ". Is uvicorn running? (" + err.message + ")";
+  }
+}
+
+async function runPrediction() {
+  if (!currentSample) return;
+  statusEl.textContent = "Running inference...";
+  btnPredict.disabled = true;
+  try {
+    const res = await fetch(`${API_BASE}/predict`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ features: currentSample.features }),
+    });
+    if (!res.ok) throw new Error("backend returned " + res.status);
+    const data = await res.json();
+
+    const isFraud = data.predicted_label === 1;
+    resultEl.className = "result show " + (isFraud ? "fraud" : "safe");
+    verdictEl.textContent = isFraud ? "Predicted: FRAUDULENT" : "Predicted: NORMAL";
+    const pct = (data.fraud_probability * 100).toFixed(2);
+    probBar.style.width = pct + "%";
+    probValue.textContent = pct + "%";
+    predLabel.textContent = isFraud ? "Fraud (1)" : "Normal (0)";
+    trueLabel.textContent = currentSample.true_label === 1 ? "Fraud (1)" : "Normal (0)";
+    const correct = data.predicted_label === currentSample.true_label;
+    correctness.textContent = correct ? "Yes" : "No";
+    correctness.style.color = correct ? "#3ecf8e" : "#ff5b6a";
+    featuresBox.textContent = JSON.stringify(currentSample.features);
+
+    statusEl.textContent = "Done. Load another transaction to test again.";
+  } catch (err) {
+    statusEl.textContent = "Prediction failed: " + err.message;
+    btnPredict.disabled = false;
+  }
+}
+
+document.getElementById("btnNormal").addEventListener("click", () => fetchSample(0));
+document.getElementById("btnFraud").addEventListener("click", () => fetchSample(1));
+document.getElementById("btnPredict").addEventListener("click", runPrediction);
+</script>
+</body>
+</html>
